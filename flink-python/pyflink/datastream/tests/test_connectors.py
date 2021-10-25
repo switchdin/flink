@@ -24,7 +24,8 @@ from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors import FlinkKafkaConsumer, FlinkKafkaProducer, JdbcSink, \
     JdbcConnectionOptions, JdbcExecutionOptions, StreamingFileSink, \
     OutputFileConfig, FileSource, StreamFormat, FileEnumeratorProvider, FileSplitAssignerProvider, \
-    NumberSequenceSource, RollingPolicy, FileSink, BucketAssigner
+    NumberSequenceSource, RollingPolicy, FileSink, BucketAssigner, RMQSink, RMQSource, \
+    RMQConnectionConfig
 from pyflink.datastream.tests.test_util import DataStreamTestSinkFunction
 from pyflink.java_gateway import get_gateway
 from pyflink.testing.test_case_utils import PyFlinkTestCase, _load_specific_flink_module_jars, \
