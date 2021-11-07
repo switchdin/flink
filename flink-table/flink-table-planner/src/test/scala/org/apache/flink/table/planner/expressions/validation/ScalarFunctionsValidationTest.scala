@@ -32,22 +32,6 @@ class ScalarFunctionsValidationTest extends ScalarTypesTestBase {
   // Math functions
   // ----------------------------------------------------------------------------------------------
 
-  @Test
-  def testInvalidLog1(): Unit = {
-    testSqlApi(
-      "LOG(1, 100)",
-      "Infinity"
-    )
-  }
-
-  @Test
-  def testInvalidLog2(): Unit ={
-    testSqlApi(
-      "LOG(-1)",
-      "NaN"
-    )
-  }
-
   @Test(expected = classOf[ValidationException])
   def testInvalidBin1(): Unit = {
     testSqlApi("BIN(f12)", "101010") // float type
@@ -94,7 +78,7 @@ class ScalarFunctionsValidationTest extends ScalarTypesTestBase {
 
   @Test
   def testInvalidTruncate2(): Unit = {
-    thrown.expect(classOf[CodeGenException])
+    thrown.expect(classOf[ValidationException])
     // The one argument is of type String
     testSqlApi(
       "TRUNCATE('abc')",

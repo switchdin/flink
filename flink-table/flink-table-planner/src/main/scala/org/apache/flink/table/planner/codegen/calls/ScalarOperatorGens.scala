@@ -415,11 +415,32 @@ object ScalarOperatorGens {
     }
   }
 
+  /**
+   * check the validity of implicit type conversion
+   * See: https://cwiki.apache.org/confluence/display/FLINK/FLIP-154%3A+SQL+Implicit+Type+Coercion
+   */
+  private def checkImplicitConversionValidity(
+      left: GeneratedExpression,
+      right: GeneratedExpression): Unit = {
+    // TODO: in flip-154, we should support implicit type conversion between (var)char and numeric,
+    // but flink has not yet supported now
+    if ((isNumeric(left.resultType) && isCharacterString(right.resultType))
+      || (isNumeric(right.resultType) && isCharacterString(left.resultType))) {
+      throw new CodeGenException(
+        "implicit type conversion between " +
+          s"${left.resultType.getTypeRoot}" +
+          s" and " +
+          s"${right.resultType.getTypeRoot}" +
+          s" is not supported now")
+    }
+  }
+
   def generateEquals(
       ctx: CodeGeneratorContext,
       left: GeneratedExpression,
       right: GeneratedExpression)
     : GeneratedExpression = {
+    checkImplicitConversionValidity(left,right)
     val canEqual = isInteroperable(left.resultType, right.resultType)
     if (isCharacterString(left.resultType) && isCharacterString(right.resultType)) {
       generateOperatorIfNotNull(ctx, new BooleanType(), left, right) {
@@ -519,6 +540,7 @@ object ScalarOperatorGens {
       left: GeneratedExpression,
       right: GeneratedExpression)
     : GeneratedExpression = {
+    checkImplicitConversionValidity(left,right)
     if (isCharacterString(left.resultType) && isCharacterString(right.resultType)) {
       generateOperatorIfNotNull(ctx, new BooleanType(), left, right) {
         (leftTerm, rightTerm) => s"!$leftTerm.equals($rightTerm)"
@@ -1140,11 +1162,20 @@ object ScalarOperatorGens {
       }
 
     case (VARCHAR | CHAR, TIMESTAMP_WITH_LOCAL_TIME_ZONE) =>
-      generateUnaryOperatorIfNotNull(
-        ctx, targetType, operand, resultNullable = true) { operandTerm =>
+      generateCallWithStmtIfArgsNotNull(
+        ctx, targetType, Seq(operand), resultNullable = true) { operands =>
         val zone = ctx.addReusableSessionTimeZone()
         val method = qualifyMethod(BuiltInMethods.STRING_TO_TIMESTAMP_TIME_ZONE)
-        s"$TIMESTAMP_DATA.fromEpochMillis($method($operandTerm.toString(), $zone))"
+        val toTimestampResultName = newName("toTimestampResult")
+        // this method call might return null
+        val stmt = s"Long $toTimestampResultName = $method(${operands.head}.toString(), $zone);"
+        val result =
+          s"""
+             |($toTimestampResultName == null ?
+             |  null :
+             |  $TIMESTAMP_DATA.fromEpochMillis($toTimestampResultName))
+             |""".stripMargin
+        (stmt, result)
       }
 
     // String -> binary
