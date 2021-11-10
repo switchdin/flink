@@ -576,7 +576,7 @@ class SourceFunction(JavaFunctionWrapper):
 
     def __init__(self, source_func: Union[str, JavaObject]):
         """
-        Constructor of SinkFunction.
+        Constructor of SourceFunction.
 
         :param source_func: The java SourceFunction object.
         """

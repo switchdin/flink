@@ -26,6 +26,7 @@ from pyflink.java_gateway import get_gateway
 __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
+           'KafkaRecordSerializationSchema',
            'AvroRowSerializationSchema', 'AvroRowDeserializationSchema', 'Encoder']
 
 
@@ -35,6 +36,7 @@ class SerializationSchema(object):
     into a different serialized representation. Most data sinks (for example Apache Kafka) require
     the data to be handed to them in a specific format (for example as byte strings).
     """
+
     def __init__(self, j_serialization_schema=None):
         self._j_serialization_schema = j_serialization_schema
 
@@ -48,8 +50,35 @@ class DeserializationSchema(object):
     In addition, the DeserializationSchema describes the produced type which lets Flink create
     internal serializers and structures to handle the type.
     """
+
     def __init__(self, j_deserialization_schema=None):
         self._j_deserialization_schema = j_deserialization_schema
+
+
+class KafkaRecordSerializationSchema:
+    @staticmethod
+    def builder(self):
+        return KafkaRecordSerializationSchemaBuilder()
+
+    def __init__(self, j_kafka_record_serialization_schema):
+        self.j_kafka_record_serialization_schema = j_kafka_record_serialization_schema
+
+
+class KafkaRecordSerializationSchemaBuilder:
+    def __init__(self):
+        self.builder_obj = get_gateway().jvm \
+            .org.apache.flink.connector.kafka.KafkaRecordSerializationSchemaBuilder()
+
+    def set_topic(self, topic_name):
+        self.builder_obj.setTopic(topic_name)
+        return self
+
+    def set_value_serialization_schema(self, serialization_schema: SerializationSchema):
+        self.builder_obj.setValueSerializationSchema(serialization_schema)
+        return self
+
+    def build(self) -> 'KafkaRecordSerializationSchema':
+        return KafkaRecordSerializationSchema(self.builder_obj.build())
 
 
 class SimpleStringSchema(SerializationSchema, DeserializationSchema):
@@ -77,6 +106,7 @@ class JsonRowDeserializationSchema(DeserializationSchema):
 
     Failures during deserialization are forwarded as wrapped IOExceptions.
     """
+
     def __init__(self, j_deserialization_schema):
         super(JsonRowDeserializationSchema, self).__init__(j_deserialization_schema)
 
@@ -137,7 +167,7 @@ class JsonRowDeserializationSchema(DeserializationSchema):
             return self
 
         def build(self):
-            JBuilder = get_gateway().jvm.org.apache.flink.formats.json.JsonRowDeserializationSchema\
+            JBuilder = get_gateway().jvm.org.apache.flink.formats.json.JsonRowDeserializationSchema \
                 .Builder
             j_builder = JBuilder(self._type_info.get_java_type_info())
 
@@ -170,6 +200,7 @@ class JsonRowSerializationSchema(SerializationSchema):
         """
         Builder for JsonRowSerializationSchema.
         """
+
         def __init__(self):
             self._type_info = None
 
@@ -210,10 +241,11 @@ class CsvRowDeserializationSchema(DeserializationSchema):
         """
         A builder for creating a CsvRowDeserializationSchema.
         """
+
         def __init__(self, type_info: TypeInformation):
             if type_info is None:
                 raise TypeError("Type information must not be None")
-            self._j_builder = get_gateway().jvm\
+            self._j_builder = get_gateway().jvm \
                 .org.apache.flink.formats.csv.CsvRowDeserializationSchema.Builder(
                 type_info.get_java_type_info())
 
@@ -258,6 +290,7 @@ class CsvRowSerializationSchema(SerializationSchema):
 
     Result byte[] messages can be deserialized using CsvRowDeserializationSchema.
     """
+
     def __init__(self, j_csv_row_serialization_schema):
         super(CsvRowSerializationSchema, self).__init__(j_csv_row_serialization_schema)
 
@@ -265,10 +298,11 @@ class CsvRowSerializationSchema(SerializationSchema):
         """
         A builder for creating a CsvRowSerializationSchema.
         """
+
         def __init__(self, type_info: TypeInformation):
             if type_info is None:
                 raise TypeError("Type information must not be None")
-            self._j_builder = get_gateway().jvm\
+            self._j_builder = get_gateway().jvm \
                 .org.apache.flink.formats.csv.CsvRowSerializationSchema.Builder(
                 type_info.get_java_type_info())
 
@@ -312,6 +346,7 @@ class AvroRowDeserializationSchema(DeserializationSchema):
 
     Projects with Avro records containing logical date/time types need to add a JodaTime dependency.
     """
+
     def __init__(self, record_class: str = None, avro_schema_string: str = None):
         """
         Creates an Avro deserialization schema for the given specific record class or Avro schema
@@ -388,6 +423,6 @@ class Encoder(object):
         A simple Encoder that uses toString() on the input elements and writes them to
         the output bucket file separated by newline.
         """
-        j_encoder = get_gateway().jvm.org.apache.flink.api.common.serialization.\
+        j_encoder = get_gateway().jvm.org.apache.flink.api.common.serialization. \
             SimpleStringEncoder(charset_name)
         return Encoder(j_encoder)
