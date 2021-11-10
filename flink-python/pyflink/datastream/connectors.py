@@ -20,9 +20,9 @@ from enum import Enum
 from typing import  Union
 
 from pyflink.common import typeinfo, Duration
-from pyflink.common.serialization import Encoder, KafkaRecordSerializationSchema
+from pyflink.common.serialization import Encoder, KafkaRecordSerializationSchema, DeserializationSchema, SerializationSchema
 from pyflink.common.typeinfo import RowTypeInfo
-from pyflink.datastream.functions import SinkFunction, JavaFunctionWrapper
+from pyflink.datastream.functions import SinkFunction, JavaFunctionWrapper, SourceFunction
 from pyflink.java_gateway import get_gateway
 from pyflink.util.java_utils import to_jarray
 
@@ -578,6 +578,14 @@ class KafkaSourceBuilder:
 
     def set_starting_offsets(self, offset) -> 'KafkaSourceBuilder':
         self.builder_obj.setStartingOffsets()
+        return self
+
+    def set_group_id(self, group_id: str):
+        self.builder_obj.setGroupId(group_id)
+        return self
+
+    def set_value_only_deserializer(self, deserializer: DeserializationSchema):
+        self.builder_obj.setValueOnlyDeserializer(deserializer._j_deserialization_schema)
         return self
 
     def build(self) -> 'KafkaSource':
