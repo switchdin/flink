@@ -32,7 +32,7 @@ from pyflink.common.typeinfo import Types
 from pyflink.datastream import (StreamExecutionEnvironment, CheckpointConfig,
                                 CheckpointingMode, MemoryStateBackend, TimeCharacteristic,
                                 SlotSharingGroup)
-from pyflink.datastream.connectors import FlinkKafkaConsumer
+from pyflink.datastream.connectors import KafkaSource
 from pyflink.datastream.execution_mode import RuntimeExecutionMode
 from pyflink.datastream.functions import SourceFunction
 from pyflink.datastream.slot_sharing_group import MemorySize
@@ -595,7 +595,7 @@ class StreamExecutionEnvironmentTests(PyFlinkTestCase):
             .type_info(type_info=type_info).build()
 
         # Will get a ClassNotFoundException if not add the kafka connector into the pipeline jars.
-        kafka_consumer = FlinkKafkaConsumer(source_topic, deserialization_schema, props)
+        kafka_consumer = KafkaSource(source_topic, deserialization_schema, props)
         self.env.add_source(kafka_consumer).print()
         self.env.get_execution_plan()
 
@@ -617,7 +617,7 @@ class StreamExecutionEnvironmentTests(PyFlinkTestCase):
 
         # It Will raise a ClassNotFoundException if the kafka connector is not added into the
         # pipeline classpaths.
-        kafka_consumer = FlinkKafkaConsumer(source_topic, deserialization_schema, props)
+        kafka_consumer = KafkaSource(source_topic, deserialization_schema, props)
         self.env.add_source(kafka_consumer).print()
         self.env.get_execution_plan()
 

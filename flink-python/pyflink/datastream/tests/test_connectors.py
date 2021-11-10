@@ -21,7 +21,7 @@ from pyflink.common.serialization import JsonRowDeserializationSchema, \
     JsonRowSerializationSchema, Encoder
 from pyflink.common.typeinfo import Types
 from pyflink.datastream import StreamExecutionEnvironment
-from pyflink.datastream.connectors import FlinkKafkaConsumer, FlinkKafkaProducer, JdbcSink, \
+from pyflink.datastream.connectors import KafkaSource, KafkaSink, JdbcSink, \
     JdbcConnectionOptions, JdbcExecutionOptions, StreamingFileSink, \
     OutputFileConfig, FileSource, StreamFormat, FileEnumeratorProvider, FileSplitAssignerProvider, \
     NumberSequenceSource, RollingPolicy, FileSink, BucketAssigner, RMQSink, RMQSource, \
@@ -33,7 +33,7 @@ from pyflink.testing.test_case_utils import PyFlinkTestCase, _load_specific_flin
 from pyflink.util.java_utils import load_java_class, get_field_value
 
 
-class FlinkKafkaTest(PyFlinkTestCase):
+class KafkaTest(PyFlinkTestCase):
 
     def setUp(self) -> None:
         self.env = StreamExecutionEnvironment.get_execution_environment()
@@ -46,9 +46,9 @@ class FlinkKafkaTest(PyFlinkTestCase):
 
     def test_kafka_connector_universal(self):
         _load_specific_flink_module_jars('/flink-connectors/flink-sql-connector-kafka')
-        self.kafka_connector_assertion(FlinkKafkaConsumer, FlinkKafkaProducer)
+        self.kafka_connector_assertion(KafkaSource, KafkaSink)
 
-    def kafka_connector_assertion(self, flink_kafka_consumer_clz, flink_kafka_producer_clz):
+    def kafka_connector_assertion(self, kafka_source_clz, kafka_sink_clz):
         source_topic = 'test_source_topic'
         sink_topic = 'test_sink_topic'
         props = {'bootstrap.servers': 'localhost:9092', 'group.id': 'test_group'}
@@ -58,25 +58,25 @@ class FlinkKafkaTest(PyFlinkTestCase):
         deserialization_schema = JsonRowDeserializationSchema.builder() \
             .type_info(type_info=type_info).build()
 
-        flink_kafka_consumer = flink_kafka_consumer_clz(source_topic, deserialization_schema, props)
-        flink_kafka_consumer.set_start_from_earliest()
-        flink_kafka_consumer.set_commit_offsets_on_checkpoints(True)
+        kafka_source = kafka_source_clz()
+        kafka_source.set_bootstrap_servers()
+        kafka_source.set_topics()
 
-        j_properties = get_field_value(flink_kafka_consumer.get_java_function(), 'properties')
+        j_properties = get_field_value(kafka_source.get_java_function(), 'properties')
         self.assertEqual('localhost:9092', j_properties.getProperty('bootstrap.servers'))
         self.assertEqual('test_group', j_properties.getProperty('group.id'))
-        self.assertTrue(get_field_value(flink_kafka_consumer.get_java_function(),
+        self.assertTrue(get_field_value(kafka_source.get_java_function(),
                                         'enableCommitOnCheckpoints'))
-        j_start_up_mode = get_field_value(flink_kafka_consumer.get_java_function(), 'startupMode')
+        j_start_up_mode = get_field_value(kafka_source.get_java_function(), 'startupMode')
 
-        j_deserializer = get_field_value(flink_kafka_consumer.get_java_function(), 'deserializer')
+        j_deserializer = get_field_value(kafka_source.get_java_function(), 'deserializer')
         j_deserialize_type_info = invoke_java_object_method(j_deserializer, "getProducedType")
         deserialize_type_info = typeinfo._from_java_type(j_deserialize_type_info)
         self.assertTrue(deserialize_type_info == type_info)
         self.assertTrue(j_start_up_mode.equals(get_gateway().jvm
                                                .org.apache.flink.streaming.connectors
                                                .kafka.config.StartupMode.EARLIEST))
-        j_topic_desc = get_field_value(flink_kafka_consumer.get_java_function(),
+        j_topic_desc = get_field_value(kafka_source.get_java_function(),
                                        'topicsDescriptor')
         j_topics = invoke_java_object_method(j_topic_desc, 'getFixedTopics')
         self.assertEqual(['test_source_topic'], list(j_topics))
@@ -84,14 +84,14 @@ class FlinkKafkaTest(PyFlinkTestCase):
         # Test for kafka producer
         serialization_schema = JsonRowSerializationSchema.builder().with_type_info(type_info) \
             .build()
-        flink_kafka_producer = flink_kafka_producer_clz(sink_topic, serialization_schema, props)
-        flink_kafka_producer.set_write_timestamp_to_kafka(False)
+        kafka_sink = kafka_sink_clz(sink_topic, serialization_schema, props)
+        kafka_sink.set_write_timestamp_to_kafka(False)
 
-        j_producer_config = get_field_value(flink_kafka_producer.get_java_function(),
+        j_producer_config = get_field_value(kafka_sink.get_java_function(),
                                             'producerConfig')
         self.assertEqual('localhost:9092', j_producer_config.getProperty('bootstrap.servers'))
         self.assertEqual('test_group', j_producer_config.getProperty('group.id'))
-        self.assertFalse(get_field_value(flink_kafka_producer.get_java_function(),
+        self.assertFalse(get_field_value(kafka_sink.get_java_function(),
                                          'writeTimestampToKafka'))
 
     def tearDown(self):
