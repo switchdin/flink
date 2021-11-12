@@ -57,7 +57,7 @@ class DeserializationSchema(object):
 
 class KafkaRecordSerializationSchema:
     @staticmethod
-    def builder(self):
+    def builder():
         return KafkaRecordSerializationSchemaBuilder()
 
     def __init__(self, j_kafka_record_serialization_schema):
