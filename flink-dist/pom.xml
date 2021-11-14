@@ -128,7 +128,7 @@ under the License.
 
 		<dependency>
 			<groupId>org.apache.flink</groupId>
-			<artifactId>flink-connector-rabbitmq_${scala.binary.version}</artifactId>
+			<artifactId>flink-connector-rabbitmq</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 

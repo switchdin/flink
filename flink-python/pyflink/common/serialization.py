@@ -67,7 +67,7 @@ class KafkaRecordSerializationSchema:
 class KafkaRecordSerializationSchemaBuilder:
     def __init__(self):
         self.builder_obj = get_gateway().jvm \
-            .org.apache.flink.connector.kafka.KafkaRecordSerializationSchemaBuilder()
+            .org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchemaBuilder()
 
     def set_topic(self, topic_name):
         self.builder_obj.setTopic(topic_name)
