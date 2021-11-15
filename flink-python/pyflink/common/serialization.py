@@ -410,7 +410,8 @@ class AvroRowSerializationSchema(SerializationSchema):
 
 class GzipDeserializationSchema(DeserializationSchema):
     def __init__(self):
-        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common.serialization.GzipDeserializationSchema()
+        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common.serialization \
+            .GzipDeserializationSchema()
         DeserializationSchema.__init__(
             self, j_deserialization_schema=j_gzip_deserialization_schema)
 
