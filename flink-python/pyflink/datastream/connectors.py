@@ -566,7 +566,7 @@ class FileSplitAssignerProvider(object):
 class KafkaSourceBuilder:
     def __init__(self):
         self.builder_obj = get_gateway().jvm \
-            .org.apache.flink.connector.kafka.KafkaSource.builder()
+            .org.apache.flink.connector.kafka.source.KafkaSource.builder()
 
     def set_bootstrap_servers(self, servers) -> 'KafkaSourceBuilder':
         self.builder_obj.setBootstrapServers(servers)
