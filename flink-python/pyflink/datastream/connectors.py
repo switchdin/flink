@@ -604,7 +604,7 @@ class KafkaSource(Source):
 class KafkaSinkBuilder:
     def __init__(self):
         self.builder_obj = get_gateway().jvm \
-            .org.apache.flink.connector.kafka.KafkaSinkBuilder()
+            .org.apache.flink.connector.kafka.sink.KafkaSinkBuilder()
 
     def set_bootstrap_servers(self, servers):
         self.builder_obj.setBootstrapServers(servers)
