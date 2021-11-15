@@ -26,7 +26,7 @@ from pyflink.java_gateway import get_gateway
 __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
-           'KafkaRecordSerializationSchema', 'GzipDeserializationSchema'
+           'KafkaRecordSerializationSchema', 'GzipDeserializationSchema',
            'AvroRowSerializationSchema', 'AvroRowDeserializationSchema', 'Encoder']
 
 
