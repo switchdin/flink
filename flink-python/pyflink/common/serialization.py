@@ -26,7 +26,7 @@ from pyflink.java_gateway import get_gateway
 __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
-           'KafkaRecordSerializationSchema',
+           'KafkaRecordSerializationSchema', 'GzipDeserializationSchema'
            'AvroRowSerializationSchema', 'AvroRowDeserializationSchema', 'Encoder']
 
 
@@ -406,6 +406,13 @@ class AvroRowSerializationSchema(SerializationSchema):
             j_serialization_schema = JAvroRowSerializationSchema(avro_schema_string)
 
         super(AvroRowSerializationSchema, self).__init__(j_serialization_schema)
+
+
+class GzipDeserializationSchema(DeserializationSchema):
+    def __init__(self):
+        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common.serialization.GzipDeserializationSchema()
+        DeserializationSchema.__init__(
+            self, j_deserialization_schema=j_gzip_deserialization_schema)
 
 
 class Encoder(object):
