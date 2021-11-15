@@ -580,11 +580,12 @@ class KafkaSourceBuilder:
         self.builder_obj.setStartingOffsets()
         return self
 
-    def set_group_id(self, group_id: str):
+    def set_group_id(self, group_id: str) -> 'KafkaSourceBuilder':
         self.builder_obj.setGroupId(group_id)
         return self
 
-    def set_value_only_deserializer(self, deserializer: DeserializationSchema):
+    def set_value_only_deserializer(self,
+                                    deserializer: DeserializationSchema) -> 'KafkaSourceBuilder':
         self.builder_obj.setValueOnlyDeserializer(deserializer._j_deserialization_schema)
         return self
 
