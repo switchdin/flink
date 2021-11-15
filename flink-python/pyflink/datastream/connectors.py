@@ -580,11 +580,12 @@ class KafkaSourceBuilder:
         self.builder_obj.setStartingOffsets()
         return self
 
-    def set_group_id(self, group_id: str):
+    def set_group_id(self, group_id: str) -> 'KafkaSourceBuilder':
         self.builder_obj.setGroupId(group_id)
         return self
 
-    def set_value_only_deserializer(self, deserializer: DeserializationSchema):
+    def set_value_only_deserializer(self,
+                                    deserializer: DeserializationSchema) -> 'KafkaSourceBuilder':
         self.builder_obj.setValueOnlyDeserializer(deserializer._j_deserialization_schema)
         return self
 
@@ -606,11 +607,12 @@ class KafkaSinkBuilder:
         self.builder_obj = get_gateway().jvm \
             .org.apache.flink.connector.kafka.sink.KafkaSink.builder()
 
-    def set_bootstrap_servers(self, servers):
+    def set_bootstrap_servers(self, servers) -> 'KafkaSinkBuilder':
         self.builder_obj.setBootstrapServers(servers)
         return self
 
-    def set_record_serializer(self, record_serializer: KafkaRecordSerializationSchema):
+    def set_record_serializer(self,
+                              record_serializer: KafkaRecordSerializationSchema) -> 'KafkaSinkBuilder':
         self.builder_obj.setRecordSerializer(record_serializer.j_kafka_record_serialization_schema)
         return self
 
