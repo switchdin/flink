@@ -74,7 +74,7 @@ class KafkaRecordSerializationSchemaBuilder:
         return self
 
     def set_value_serialization_schema(self, serialization_schema: SerializationSchema):
-        self.builder_obj.setValueSerializationSchema(serialization_schema)
+        self.builder_obj.setValueSerializationSchema(serialization_schema._j_serialization_schema)
         return self
 
     def build(self) -> 'KafkaRecordSerializationSchema':
