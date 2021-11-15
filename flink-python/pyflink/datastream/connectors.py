@@ -624,7 +624,7 @@ class KafkaSink(Sink):
         return KafkaSinkBuilder()
 
     def __init__(self, j_kafka_sink):
-        super(KafkaSink, self).__init__(sink_func=j_kafka_sink)
+        super(KafkaSink, self).__init__(sink=j_kafka_sink)
 
 
 class FileSourceBuilder(object):
