@@ -16,17 +16,17 @@
 # limitations under the License.
 ################################################################################
 from py4j.java_gateway import java_import
+
 from pyflink.common import typeinfo
 from pyflink.common.typeinfo import TypeInformation
-
-from pyflink.util.java_utils import load_java_class
-
 from pyflink.java_gateway import get_gateway
+from pyflink.util.java_utils import load_java_class
 
 __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
            'KafkaRecordSerializationSchema', 'GzipDeserializationSchema',
+           'ZlibDeserializationSchema',
            'AvroRowSerializationSchema', 'AvroRowDeserializationSchema', 'Encoder']
 
 
@@ -410,10 +410,18 @@ class AvroRowSerializationSchema(SerializationSchema):
 
 class GzipDeserializationSchema(DeserializationSchema):
     def __init__(self):
-        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common.serialization \
-            .GzipDeserializationSchema()
+        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common\
+            .serialization.GzipDeserializationSchema()
         DeserializationSchema.__init__(
             self, j_deserialization_schema=j_gzip_deserialization_schema)
+
+
+class ZlibDeserializationSchema(DeserializationSchema):
+    def __init__(self):
+        j_zlib_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common\
+            .serialization.ZlibDeserializationSchema()
+        DeserializationSchema.__init__(
+            self, j_deserialization_schema=j_zlib_deserialization_schema)
 
 
 class Encoder(object):

@@ -58,7 +58,7 @@ from pyflink.common.restart_strategy import RestartStrategies, RestartStrategyCo
 from pyflink.common.serialization import SerializationSchema, DeserializationSchema, \
     SimpleStringSchema, JsonRowSerializationSchema, JsonRowDeserializationSchema, \
     CsvRowSerializationSchema, CsvRowDeserializationSchema, AvroRowSerializationSchema, \
-    AvroRowDeserializationSchema, GzipDeserializationSchema, Encoder
+    AvroRowDeserializationSchema, GzipDeserializationSchema, ZlibDeserializationSchema, Encoder
 from pyflink.common.serializer import TypeSerializer
 from pyflink.common.typeinfo import Types, TypeInformation
 from pyflink.common.types import Row, RowKind
@@ -83,6 +83,7 @@ __all__ = [
     'AvroRowSerializationSchema',
     'AvroRowDeserializationSchema',
     'GzipDeserializationSchema',
+    'ZlibDeserializationSchema',
     'Encoder',
     'CompletableFuture',
     'ExecutionMode',
