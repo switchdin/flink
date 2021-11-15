@@ -607,11 +607,12 @@ class KafkaSinkBuilder:
         self.builder_obj = get_gateway().jvm \
             .org.apache.flink.connector.kafka.sink.KafkaSink.builder()
 
-    def set_bootstrap_servers(self, servers):
+    def set_bootstrap_servers(self, servers) -> 'KafkaSinkBuilder':
         self.builder_obj.setBootstrapServers(servers)
         return self
 
-    def set_record_serializer(self, record_serializer: KafkaRecordSerializationSchema):
+    def set_record_serializer(self,
+                              record_serializer: KafkaRecordSerializationSchema) -> 'KafkaSinkBuilder':
         self.builder_obj.setRecordSerializer(record_serializer.j_kafka_record_serialization_schema)
         return self
 
