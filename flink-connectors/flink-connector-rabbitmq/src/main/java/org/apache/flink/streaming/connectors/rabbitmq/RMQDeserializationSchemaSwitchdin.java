@@ -35,7 +35,7 @@ import java.io.IOException;
  * RawDeserializationSchema} to return the routing key and the raw bytes from the message.
  */
 final class RMQDeserializationSchemaSwitchdin implements RMQDeserializationSchema<Tuple2<String, byte[]>> {
-    private static final TypeInformation<Tuple2<String, byte[]>> typeInfo = TypeInformation.of(new TypeHint<Tuple2<String, byte[]>>(){});
+    private static final TypeInformation<Tuple2<String, byte[]>> typeInfo = new TypeHint<Tuple2<String, byte[]>>(){}.getTypeInfo();
     private final DeserializationSchema<byte[]> schema = new RawDeserializationSchema();
 
     public RMQDeserializationSchemaSwitchdin() {
@@ -48,12 +48,12 @@ final class RMQDeserializationSchemaSwitchdin implements RMQDeserializationSchem
             byte[] body,
             RMQCollector<Tuple2<String, byte[]>> collector)
             throws IOException {
-        collector.collect(new Tuple2(envelope.getRoutingKey(), schema.deserialize(body)));
+        collector.collect(new Tuple2<>(envelope.getRoutingKey(), schema.deserialize(body)));
     }
 
     @Override
-    public TypeInformation getProducedType() {
-        return this.typeInfo;
+    public TypeInformation<Tuple2<String, byte[]>> getProducedType() {
+        return RMQDeserializationSchemaSwitchdin.typeInfo;
     }
 
     @Override
