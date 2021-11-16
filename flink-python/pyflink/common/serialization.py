@@ -26,8 +26,9 @@ __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
            'KafkaRecordSerializationSchema', 'GzipDeserializationSchema',
-           'ZlibDeserializationSchema',
-           'AvroRowSerializationSchema', 'AvroRowDeserializationSchema', 'Encoder']
+           'ZlibDeserializationSchema', 'RMQDeserializationSchemaSwitchdin',
+           'RMQDeserializationSchema', 'AvroRowSerializationSchema',
+           'AvroRowDeserializationSchema', 'Encoder']
 
 
 class SerializationSchema(object):
@@ -79,6 +80,18 @@ class KafkaRecordSerializationSchemaBuilder:
 
     def build(self) -> 'KafkaRecordSerializationSchema':
         return KafkaRecordSerializationSchema(self.builder_obj.build())
+
+
+class RMQDeserializationSchema:
+    def __init__(self, j_schema):
+        self._j_deserialization_schema = j_schema
+
+
+class RMQDeserializationSchemaSwitchdin(RMQDeserializationSchema):
+    def __init__(self):
+        j_simple_string_serialization_schema = get_gateway().jvm.org.apache.flink.streaming\
+            .connectors.rabbitmq.RMQDeserializatonSchemaSwitchdin()
+        super().__init__(j_simple_string_serialization_schema)
 
 
 class SimpleStringSchema(SerializationSchema, DeserializationSchema):
@@ -410,7 +423,7 @@ class AvroRowSerializationSchema(SerializationSchema):
 
 class GzipDeserializationSchema(DeserializationSchema):
     def __init__(self):
-        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common\
+        j_gzip_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common \
             .serialization.GzipDeserializationSchema()
         DeserializationSchema.__init__(
             self, j_deserialization_schema=j_gzip_deserialization_schema)
@@ -418,7 +431,7 @@ class GzipDeserializationSchema(DeserializationSchema):
 
 class ZlibDeserializationSchema(DeserializationSchema):
     def __init__(self):
-        j_zlib_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common\
+        j_zlib_deserialization_schema = get_gateway().jvm.org.apache.flink.api.common \
             .serialization.ZlibDeserializationSchema()
         DeserializationSchema.__init__(
             self, j_deserialization_schema=j_zlib_deserialization_schema)
