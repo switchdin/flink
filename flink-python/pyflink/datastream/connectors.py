@@ -20,7 +20,8 @@ from enum import Enum
 from typing import  Union
 
 from pyflink.common import typeinfo, Duration
-from pyflink.common.serialization import Encoder, KafkaRecordSerializationSchema, DeserializationSchema, SerializationSchema
+from pyflink.common.serialization import Encoder, KafkaRecordSerializationSchema, \
+    DeserializationSchema, SerializationSchema, RMQDeserializationSchema
 from pyflink.common.typeinfo import RowTypeInfo
 from pyflink.datastream.functions import SinkFunction, JavaFunctionWrapper, SourceFunction
 from pyflink.java_gateway import get_gateway
@@ -1017,7 +1018,7 @@ class RMQSource(SourceFunction):
                  connection_config: 'RMQConnectionConfig',
                  queue_name: str,
                  use_correlation_id: bool,
-                 deserialization_schema: DeserializationSchema
+                 deserialization_schema: Union[DeserializationSchema, RMQDeserializationSchema]
                  ):
         """
         Creates a new RabbitMQ source.
