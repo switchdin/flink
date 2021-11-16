@@ -20,6 +20,7 @@ package org.apache.flink.streaming.connectors.rabbitmq;
 
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.RawDeserializationSchema;
+import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
@@ -34,13 +35,10 @@ import java.io.IOException;
  * RawDeserializationSchema} to return the routing key and the raw bytes from the message.
  */
 final class RMQDeserializationSchemaSwitchdin implements RMQDeserializationSchema<Tuple2<String, byte[]>> {
-    private final TypeInformation<Tuple2<String, byte[]>> type;
-    private DeserializationSchema<byte[]> schema;
+    private static final TypeInformation<Tuple2<String, byte[]>> typeInfo = TypeInformation.of(new TypeHint<Tuple2<String, byte[]>>(){});
+    private final DeserializationSchema<byte[]> schema = new RawDeserializationSchema();
 
     public RMQDeserializationSchemaSwitchdin() {
-        schema = new RawDeserializationSchema();
-        this.type = TypeExtractor.createTypeInfo(
-                RMQDeserializationSchemaSwitchdin.class, getClass(), 0, null, null);
     }
 
     @Override
@@ -54,8 +52,8 @@ final class RMQDeserializationSchemaSwitchdin implements RMQDeserializationSchem
     }
 
     @Override
-    public TypeInformation<Tuple2<String, byte[]>> getProducedType() {
-        return this.type;
+    public TypeInformation getProducedType() {
+        return this.typeInfo;
     }
 
     @Override
