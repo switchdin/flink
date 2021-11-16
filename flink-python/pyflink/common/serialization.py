@@ -90,7 +90,7 @@ class RMQDeserializationSchema:
 class RMQDeserializationSchemaSwitchdin(RMQDeserializationSchema):
     def __init__(self):
         j_simple_string_serialization_schema = get_gateway().jvm.org.apache.flink.streaming\
-            .connectors.rabbitmq.RMQDeserializatonSchemaSwitchdin()
+            .connectors.rabbitmq.RMQDeserializationSchemaSwitchdin()
         super().__init__(j_simple_string_serialization_schema)
 
 
