@@ -26,8 +26,7 @@ __all__ = ['SerializationSchema', 'DeserializationSchema', 'SimpleStringSchema',
            'JsonRowSerializationSchema', 'JsonRowDeserializationSchema',
            'CsvRowSerializationSchema', 'CsvRowDeserializationSchema',
            'KafkaRecordSerializationSchema', 'GzipDeserializationSchema',
-           'ZlibDeserializationSchema', 'RMQDeserializationSchemaSwitchdin',
-           'RMQDeserializationSchema', 'AvroRowSerializationSchema',
+           'ZlibDeserializationSchema', 'RMQDeserializationSchema', 'AvroRowSerializationSchema',
            'AvroRowDeserializationSchema', 'Encoder']
 
 
@@ -85,13 +84,6 @@ class KafkaRecordSerializationSchemaBuilder:
 class RMQDeserializationSchema:
     def __init__(self, j_schema):
         self._j_deserialization_schema = j_schema
-
-
-class RMQDeserializationSchemaSwitchdin(RMQDeserializationSchema):
-    def __init__(self):
-        j_simple_string_serialization_schema = get_gateway().jvm.org.apache.flink.streaming\
-            .connectors.rabbitmq.RMQDeserializationSchemaSwitchdin()
-        super().__init__(j_simple_string_serialization_schema)
 
 
 class SimpleStringSchema(SerializationSchema, DeserializationSchema):
