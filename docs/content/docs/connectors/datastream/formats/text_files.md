@@ -32,7 +32,11 @@ Flink supports reading from text lines from a file using `TextLineFormat`. This 
 To use the format you need to add the Flink Parquet dependency to your project:
 
 ```xml
-{{< artifact flink-connector-files >}}
+<dependency>
+	<groupId>org.apache.flink</groupId>
+	<artifactId>flink-connector-files</artifactId>
+	<version>{{< version >}}</version>
+</dependency>
 ```
 
 This format is compatible with the new Source that can be used in both batch and streaming modes.
