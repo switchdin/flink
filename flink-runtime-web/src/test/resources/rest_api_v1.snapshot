@@ -435,6 +435,10 @@
         },
         "savepointPath" : {
           "type" : "string"
+        },
+        "restoreMode" : {
+          "type" : "string",
+          "enum" : [ "CLAIM", "NO_CLAIM", "LEGACY" ]
         }
       }
     },
@@ -505,6 +509,9 @@
               },
               "size" : {
                 "type" : "integer"
+              },
+              "mtime" : {
+                "type" : "integer"
               }
             }
           }
@@ -530,6 +537,41 @@
     },
     "response" : {
       "type" : "any"
+    }
+  }, {
+    "url" : "/jobmanager/thread-dump",
+    "method" : "GET",
+    "status-code" : "200 OK",
+    "file-upload" : false,
+    "path-parameters" : {
+      "pathParameters" : [ ]
+    },
+    "query-parameters" : {
+      "queryParameters" : [ ]
+    },
+    "request" : {
+      "type" : "any"
+    },
+    "response" : {
+      "type" : "object",
+      "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:ThreadDumpInfo",
+      "properties" : {
+        "threadInfos" : {
+          "type" : "array",
+          "items" : {
+            "type" : "object",
+            "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:ThreadDumpInfo:ThreadInfo",
+            "properties" : {
+              "threadName" : {
+                "type" : "string"
+              },
+              "stringifiedThreadInfo" : {
+                "type" : "string"
+              }
+            }
+          }
+        }
+      }
     }
   }, {
     "url" : "/jobs",
@@ -926,7 +968,7 @@
           "type" : "object",
           "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:CheckpointingStatistics:Summary",
           "properties" : {
-            "state_size" : {
+            "checkpointed_size" : {
               "type" : "object",
               "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:StatsSummaryDto",
               "properties" : {
@@ -955,6 +997,10 @@
                   "type" : "number"
                 }
               }
+            },
+            "state_size" : {
+              "type" : "object",
+              "$ref" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:StatsSummaryDto"
             },
             "end_to_end_duration" : {
               "type" : "object",
@@ -998,6 +1044,9 @@
                 "latest_ack_timestamp" : {
                   "type" : "integer"
                 },
+                "checkpointed_size" : {
+                  "type" : "integer"
+                },
                 "state_size" : {
                   "type" : "integer"
                 },
@@ -1037,6 +1086,9 @@
                         "enum" : [ "IN_PROGRESS", "COMPLETED", "FAILED" ]
                       },
                       "latest_ack_timestamp" : {
+                        "type" : "integer"
+                      },
+                      "checkpointed_size" : {
                         "type" : "integer"
                       },
                       "state_size" : {
@@ -1093,6 +1145,9 @@
                   "type" : "integer"
                 },
                 "latest_ack_timestamp" : {
+                  "type" : "integer"
+                },
+                "checkpointed_size" : {
                   "type" : "integer"
                 },
                 "state_size" : {
@@ -1175,6 +1230,9 @@
                 "type" : "integer"
               },
               "latest_ack_timestamp" : {
+                "type" : "integer"
+              },
+              "checkpointed_size" : {
                 "type" : "integer"
               },
               "state_size" : {
@@ -1319,6 +1377,9 @@
         "latest_ack_timestamp" : {
           "type" : "integer"
         },
+        "checkpointed_size" : {
+          "type" : "integer"
+        },
         "state_size" : {
           "type" : "integer"
         },
@@ -1358,6 +1419,9 @@
                 "enum" : [ "IN_PROGRESS", "COMPLETED", "FAILED" ]
               },
               "latest_ack_timestamp" : {
+                "type" : "integer"
+              },
+              "checkpointed_size" : {
                 "type" : "integer"
               },
               "state_size" : {
@@ -1420,6 +1484,9 @@
         "latest_ack_timestamp" : {
           "type" : "integer"
         },
+        "checkpointed_size" : {
+          "type" : "integer"
+        },
         "state_size" : {
           "type" : "integer"
         },
@@ -1445,7 +1512,7 @@
           "type" : "object",
           "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:TaskCheckpointStatisticsWithSubtaskDetails:Summary",
           "properties" : {
-            "state_size" : {
+            "checkpointed_size" : {
               "type" : "object",
               "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:StatsSummaryDto",
               "properties" : {
@@ -1474,6 +1541,10 @@
                   "type" : "number"
                 }
               }
+            },
+            "state_size" : {
+              "type" : "object",
+              "$ref" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:checkpoints:StatsSummaryDto"
             },
             "end_to_end_duration" : {
               "type" : "object",
@@ -1875,6 +1946,10 @@
         "cancel-job" : {
           "type" : "boolean"
         },
+        "formatType" : {
+          "type" : "string",
+          "enum" : [ "CANONICAL", "NATIVE" ]
+        },
         "triggerId" : {
           "type" : "any"
         }
@@ -1949,6 +2024,10 @@
         },
         "drain" : {
           "type" : "boolean"
+        },
+        "formatType" : {
+          "type" : "string",
+          "enum" : [ "CANONICAL", "NATIVE" ]
         },
         "triggerId" : {
           "type" : "any"
@@ -3302,6 +3381,9 @@
               },
               "size" : {
                 "type" : "integer"
+              },
+              "mtime" : {
+                "type" : "integer"
               }
             }
           }
@@ -3348,13 +3430,13 @@
     },
     "response" : {
       "type" : "object",
-      "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:taskmanager:ThreadDumpInfo",
+      "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:ThreadDumpInfo",
       "properties" : {
         "threadInfos" : {
           "type" : "array",
           "items" : {
             "type" : "object",
-            "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:taskmanager:ThreadDumpInfo:ThreadInfo",
+            "id" : "urn:jsonschema:org:apache:flink:runtime:rest:messages:ThreadDumpInfo:ThreadInfo",
             "properties" : {
               "threadName" : {
                 "type" : "string"

@@ -29,8 +29,8 @@ under the License.
 
 The sections below describe how to import the Flink project into an IDE
 for the development of Flink itself. For writing Flink programs, please
-refer to the [Java API]({{< ref "docs/dev/datastream/project-configuration" >}})
-and the [Scala API]({{< ref "docs/dev/datastream/project-configuration" >}})
+refer to the [Java API]({{< ref "docs/dev/configuration/overview" >}})
+and the [Scala API]({{< ref "docs/dev/configuration/overview" >}})
 quickstart guides.
 
 {{< hint info >}}
@@ -227,6 +227,11 @@ Java 11 (<= 1.9). Go to "Project Structure" → "Project Settings" → "Project"
 the Project SDK.
 
 When switching back to newer Flink versions you may have to revert this change again.
+
+#### Compilation fails with `package sun.misc does not exist`  
+
+This happens if you are using JDK 11 and compile to Java 8 with the `--release` option. This option is currently incompatible with our build setup.
+Go to "Settings" → "Build, Execution, Deployment" → "Compiler" → "Java Compiler" and uncheck the "Use '--release' option for cross-compilation (Java 9 and later)".
 
 #### Examples fail with a `NoClassDefFoundError` for Flink classes.
 

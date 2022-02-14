@@ -19,10 +19,10 @@ package org.apache.flink.connector.base.sink;
 
 import org.apache.flink.api.connector.sink.SinkWriter;
 import org.apache.flink.connector.base.sink.writer.AsyncSinkWriter;
+import org.apache.flink.connector.base.sink.writer.BufferedRequestState;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -30,48 +30,51 @@ import java.util.function.Consumer;
 /** Dummy destination that records write events. */
 public class ArrayListAsyncSink extends AsyncSinkBase<String, Integer> {
 
-    private final int maxBatchSize;
-    private final int maxInFlightRequests;
-    private final int maxBufferedRequests;
-    private final long flushOnBufferSizeInBytes;
-    private final long maxTimeInBufferMS;
-
     public ArrayListAsyncSink() {
-        this(25, 1, 100, 100000, 1000);
+        this(25, 1, 100, 100_000, 1000, 100_000);
     }
 
     public ArrayListAsyncSink(
             int maxBatchSize,
             int maxInFlightRequests,
             int maxBufferedRequests,
-            long flushOnBufferSizeInBytes,
-            long maxTimeInBufferMS) {
-        this.maxBatchSize = maxBatchSize;
-        this.maxInFlightRequests = maxInFlightRequests;
-        this.maxBufferedRequests = maxBufferedRequests;
-        this.flushOnBufferSizeInBytes = flushOnBufferSizeInBytes;
-        this.maxTimeInBufferMS = maxTimeInBufferMS;
+            long maxBatchSizeInBytes,
+            long maxTimeInBufferMS,
+            long maxRecordSizeInBytes) {
+        super(
+                (element, x) -> Integer.parseInt(element),
+                maxBatchSize,
+                maxInFlightRequests,
+                maxBufferedRequests,
+                maxBatchSizeInBytes,
+                maxTimeInBufferMS,
+                maxRecordSizeInBytes);
     }
 
     @Override
-    public SinkWriter<String, Void, Collection<Integer>> createWriter(
-            InitContext context, List<Collection<Integer>> states) {
+    public SinkWriter<String, Void, BufferedRequestState<Integer>> createWriter(
+            InitContext context, List<BufferedRequestState<Integer>> states) {
         /* SinkWriter implementing {@code submitRequestEntries} that is used to define the persistence
          * logic into {@code ArrayListDestination}.
          */
         return new AsyncSinkWriter<String, Integer>(
-                (element, x) -> Integer.parseInt(element),
+                getElementConverter(),
                 context,
-                maxBatchSize,
-                maxInFlightRequests,
-                maxBufferedRequests,
-                flushOnBufferSizeInBytes,
-                maxTimeInBufferMS) {
+                getMaxBatchSize(),
+                getMaxInFlightRequests(),
+                getMaxBufferedRequests(),
+                getMaxBatchSizeInBytes(),
+                getMaxTimeInBufferMS(),
+                getMaxRecordSizeInBytes()) {
 
             @Override
             protected void submitRequestEntries(
-                    List<Integer> requestEntries, Consumer<Collection<Integer>> requestResult) {
-                ArrayListDestination.putRecords(requestEntries);
+                    List<Integer> requestEntries, Consumer<List<Integer>> requestResult) {
+                try {
+                    ArrayListDestination.putRecords(requestEntries);
+                } catch (RuntimeException e) {
+                    getFatalExceptionCons().accept(e);
+                }
                 requestResult.accept(Arrays.asList());
             }
 
@@ -83,7 +86,8 @@ public class ArrayListAsyncSink extends AsyncSinkBase<String, Integer> {
     }
 
     @Override
-    public Optional<SimpleVersionedSerializer<Collection<Integer>>> getWriterStateSerializer() {
+    public Optional<SimpleVersionedSerializer<BufferedRequestState<Integer>>>
+            getWriterStateSerializer() {
         return Optional.empty();
     }
 }
