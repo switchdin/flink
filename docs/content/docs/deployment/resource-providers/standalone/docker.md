@@ -89,7 +89,7 @@ To shut down the cluster, either terminate (e.g. with `CTRL-C`) the JobManager a
 The Flink image contains a regular Flink distribution with its default configuration and a standard entry point script.
 You can run its entry point in the following modes:
 * [JobManager]({{< ref "docs/concepts/glossary" >}}#flink-jobmanager) for [a Session cluster](#starting-a-session-cluster-on-docker)
-* [JobManager]({{< ref "docs/concepts/glossary" >}}#flink-jobmanager) for [a Application cluster](#application-mode-on-docker)
+* [JobManager]({{< ref "docs/concepts/glossary" >}}#flink-jobmanager) for [an Application cluster](#application-mode-on-docker)
 * [TaskManager]({{< ref "docs/concepts/glossary" >}}#flink-taskmanager) for any cluster
 
 This allows you to deploy a standalone cluster (Session or Application Mode) in any containerised environment, for example:
@@ -108,7 +108,11 @@ Once you've started Flink on Docker, you can access the Flink Webfrontend on [lo
 We recommend using [Docker Compose](#flink-with-docker-compose) or [Docker Swarm](#flink-with-docker-swarm) for deploying Flink in Session Mode to ease system configuration.
 
 
-### Application Mode on Docker
+### Application Mode
+
+{{< hint info >}}
+For high-level intuition behind the application mode, please refer to the [deployment mode overview]({{< ref "docs/deployment/overview#application-mode" >}}).
+{{< /hint >}}
 
 A *Flink Application cluster* is a dedicated cluster which runs a single job.
 In this case, you deploy the cluster with the job as one step, thus, there is no extra job submission needed.
@@ -198,14 +202,13 @@ You can provide the following additional command line arguments to the cluster e
 
 If the main function of the user job main class accepts arguments, you can also pass them at the end of the `docker run` command.
 
-### Per-Job Mode on Docker
+### Session Mode
 
-[Per-Job Mode]({{< ref "docs/deployment/overview" >}}#per-job-mode) is not supported by Flink on Docker.
-
-### Session Mode on Docker
+{{< hint info >}}
+For high-level intuition behind the session mode, please refer to the [deployment mode overview]({{< ref "docs/deployment/overview#session-mode" >}}).
+{{< /hint >}}
 
 Local deployment in the Session Mode has already been described in the [Getting Started](#starting-a-session-cluster-on-docker) section above.
-
 
 {{< top >}}
 

@@ -18,6 +18,7 @@
 
 package org.apache.flink.table.api;
 
+import org.apache.flink.annotation.Experimental;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.table.api.config.TableConfigOptions;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
@@ -62,10 +63,10 @@ public interface StatementSet {
      * written to a table (backed by a {@link DynamicTableSink}) expressed via the given {@link
      * TableDescriptor}.
      *
-     * <p>The given {@link TableDescriptor descriptor} is registered as an inline (i.e. anonymous)
-     * temporary catalog table (see {@link TableEnvironment#createTemporaryTable(String,
-     * TableDescriptor)}. Then a statement is added to the statement set that inserts the {@link
-     * Table} object's pipeline into that temporary table.
+     * <p>The given {@link TableDescriptor descriptor} describes an anonymous table that won't be
+     * registered in the catalog. This table will be propagated directly in the operation tree,
+     * adding a statement that inserts the provided {@link Table} object's pipeline into such a
+     * table.
      *
      * <p>This method allows to declare a {@link Schema} for the sink descriptor. The declaration is
      * similar to a {@code CREATE TABLE} DDL in SQL and allows to:
@@ -101,10 +102,10 @@ public interface StatementSet {
      * written to a table (backed by a {@link DynamicTableSink}) expressed via the given {@link
      * TableDescriptor}.
      *
-     * <p>The given {@link TableDescriptor descriptor} is registered as an inline (i.e. anonymous)
-     * temporary catalog table (see {@link TableEnvironment#createTemporaryTable(String,
-     * TableDescriptor)}. Then a statement is added to the statement set that inserts the {@link
-     * Table} object's pipeline into that temporary table.
+     * <p>The given {@link TableDescriptor descriptor} won't be registered in the catalog, but it
+     * will be propagated directly in the operation tree, adding a statement to the statement set
+     * that inserts the {@link Table} object's pipeline into the anonymous table described with
+     * {@link TableDescriptor descriptor}.
      *
      * <p>This method allows to declare a {@link Schema} for the sink descriptor. The declaration is
      * similar to a {@code CREATE TABLE} DDL in SQL and allows to:
@@ -156,4 +157,19 @@ public interface StatementSet {
      * {@link TableConfigOptions#TABLE_DML_SYNC} for always synchronous execution.
      */
     TableResult execute();
+
+    /**
+     * Compiles all statements into a {@link CompiledPlan} that can be executed as one job.
+     *
+     * <p>Compiled plans can be persisted and reloaded across Flink versions. They describe static
+     * pipelines to ensure backwards compatibility and enable stateful streaming job upgrades. See
+     * {@link CompiledPlan} and the website documentation for more information.
+     *
+     * <p>Note: The compiled plan feature is not supported in batch mode.
+     *
+     * @throws TableException if any of the statements is invalid or if the plan cannot be
+     *     persisted.
+     */
+    @Experimental
+    CompiledPlan compilePlan() throws TableException;
 }

@@ -77,6 +77,10 @@ In step `(3)`, we are starting a Flink Client (a short-lived JVM process) that s
 
 ### Application Mode
 
+{{< hint info >}}
+For high-level intuition behind the application mode, please refer to the [deployment mode overview]({{< ref "docs/deployment/overview#application-mode" >}}).
+{{< /hint >}}
+
 To start a Flink JobManager with an embedded application, we use the `bin/standalone-job.sh` script. 
 We demonstrate this mode by locally starting the `TopSpeedWindowing.jar` example, running on a single TaskManager.
 
@@ -107,12 +111,11 @@ $ ./bin/taskmanager.sh stop
 $ ./bin/standalone-job.sh stop
 ```
 
-
-### Per-Job Mode
-
-Per-Job Mode is not supported by the Standalone Cluster.
-
 ### Session Mode
+
+{{< hint info >}}
+For high-level intuition behind the session mode, please refer to the [deployment mode overview]({{< ref "docs/deployment/overview#session-mode" >}}).
+{{< /hint >}}
 
 Local deployment in Session Mode has already been described in the [introduction](#starting-a-standalone-cluster-session-mode) above.
 

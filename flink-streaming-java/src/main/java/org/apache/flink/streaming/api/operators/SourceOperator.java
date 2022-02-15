@@ -34,21 +34,28 @@ import org.apache.flink.core.io.InputStatus;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.metrics.groups.SourceReaderMetricGroup;
 import org.apache.flink.runtime.io.AvailabilityProvider;
+import org.apache.flink.runtime.io.network.api.StopMode;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.runtime.operators.coordination.OperatorEvent;
 import org.apache.flink.runtime.operators.coordination.OperatorEventGateway;
 import org.apache.flink.runtime.operators.coordination.OperatorEventHandler;
+import org.apache.flink.runtime.source.coordinator.SourceCoordinator;
+import org.apache.flink.runtime.source.coordinator.SourceCoordinator.WatermarkAlignmentParams;
 import org.apache.flink.runtime.source.event.AddSplitEvent;
 import org.apache.flink.runtime.source.event.NoMoreSplitsEvent;
 import org.apache.flink.runtime.source.event.ReaderRegistrationEvent;
+import org.apache.flink.runtime.source.event.ReportedWatermarkEvent;
 import org.apache.flink.runtime.source.event.RequestSplitEvent;
 import org.apache.flink.runtime.source.event.SourceEventWrapper;
+import org.apache.flink.runtime.source.event.WatermarkAlignmentEvent;
 import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.runtime.state.StateSnapshotContext;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.operators.source.TimestampsAndWatermarks;
 import org.apache.flink.streaming.api.operators.util.SimpleVersionedListState;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.io.DataInputStatus;
+import org.apache.flink.streaming.runtime.io.MultipleFuturesAvailabilityHelper;
 import org.apache.flink.streaming.runtime.io.PushingAsyncDataInput;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
@@ -65,6 +72,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * Base source operator only used for integrating the source reader which is proposed by FLIP-27. It
@@ -106,6 +114,8 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
     /** The factory for timestamps and watermark generators. */
     private final WatermarkStrategy<OUT> watermarkStrategy;
 
+    private final WatermarkAlignmentParams watermarkAlignmentParams;
+
     /** The Flink configuration. */
     private final Configuration configuration;
 
@@ -126,6 +136,8 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
 
     private DataOutput<OUT> lastInvokedOutput;
 
+    private long lastEmittedWatermark = Watermark.UNINITIALIZED.getTimestamp();
+
     /** The state that holds the currently assigned splits. */
     private ListState<SplitT> readerState;
 
@@ -145,12 +157,19 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
 
     private enum OperatingMode {
         READING,
+        WAITING_FOR_ALIGNMENT,
         OUTPUT_NOT_INITIALIZED,
+        SOURCE_DRAINED,
         SOURCE_STOPPED,
         DATA_FINISHED
     }
 
     private InternalSourceReaderMetricGroup sourceMetricGroup;
+
+    private long currentMaxDesiredWatermark = Watermark.MAX_WATERMARK.getTimestamp();
+    /** Can be not completed only in {@link OperatingMode#WAITING_FOR_ALIGNMENT} mode. */
+    private CompletableFuture<Void> waitingForAlignmentFuture =
+            CompletableFuture.completedFuture(null);
 
     private @Nullable LatencyMarkerEmitter<OUT> latencyMarerEmitter;
 
@@ -164,11 +183,35 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
             Configuration configuration,
             String localHostname,
             boolean emitProgressiveWatermarks) {
+        this(
+                readerFactory,
+                operatorEventGateway,
+                splitSerializer,
+                watermarkStrategy,
+                timeService,
+                configuration,
+                localHostname,
+                emitProgressiveWatermarks,
+                SourceCoordinator.WATERMARK_ALIGNMENT_DISABLED);
+    }
+
+    public SourceOperator(
+            FunctionWithException<SourceReaderContext, SourceReader<OUT, SplitT>, Exception>
+                    readerFactory,
+            OperatorEventGateway operatorEventGateway,
+            SimpleVersionedSerializer<SplitT> splitSerializer,
+            WatermarkStrategy<OUT> watermarkStrategy,
+            ProcessingTimeService timeService,
+            Configuration configuration,
+            String localHostname,
+            boolean emitProgressiveWatermarks,
+            WatermarkAlignmentParams watermarkAlignmentParams) {
 
         this.readerFactory = checkNotNull(readerFactory);
         this.operatorEventGateway = checkNotNull(operatorEventGateway);
         this.splitSerializer = checkNotNull(splitSerializer);
         this.watermarkStrategy = checkNotNull(watermarkStrategy);
+        this.watermarkAlignmentParams = watermarkAlignmentParams;
         this.processingTimeService = timeService;
         this.configuration = checkNotNull(configuration);
         this.localHostname = checkNotNull(localHostname);
@@ -305,23 +348,36 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
 
     @Override
     public void finish() throws Exception {
+        stopInternalServices();
+        super.finish();
+
+        finished.complete(null);
+    }
+
+    private void stopInternalServices() {
         if (eventTimeLogic != null) {
             eventTimeLogic.stopPeriodicWatermarkEmits();
         }
         if (latencyMarerEmitter != null) {
             latencyMarerEmitter.close();
         }
-        super.finish();
-
-        finished.complete(null);
     }
 
-    public CompletableFuture<Void> stop() {
+    public CompletableFuture<Void> stop(StopMode mode) {
         switch (operatingMode) {
+            case WAITING_FOR_ALIGNMENT:
             case OUTPUT_NOT_INITIALIZED:
             case READING:
-                this.operatingMode = OperatingMode.SOURCE_STOPPED;
+                this.operatingMode =
+                        mode == StopMode.DRAIN
+                                ? OperatingMode.SOURCE_DRAINED
+                                : OperatingMode.SOURCE_STOPPED;
                 availabilityHelper.forceStop();
+                if (this.operatingMode == OperatingMode.SOURCE_STOPPED) {
+                    stopInternalServices();
+                    finished.complete(null);
+                    return finished;
+                }
                 break;
         }
         return finished;
@@ -355,7 +411,17 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
     private DataInputStatus emitNextNotReading(DataOutput<OUT> output) throws Exception {
         switch (operatingMode) {
             case OUTPUT_NOT_INITIALIZED:
-                currentMainOutput = eventTimeLogic.createMainOutput(output);
+                if (watermarkAlignmentParams.isEnabled()) {
+                    // Only wrap the output when watermark alignment is enabled, as otherwise this
+                    // introduces a small performance regression (probably because of an extra
+                    // virtual call)
+                    processingTimeService.scheduleWithFixedDelay(
+                            this::emitLatestWatermark,
+                            watermarkAlignmentParams.getUpdateInterval(),
+                            watermarkAlignmentParams.getUpdateInterval());
+                }
+                currentMainOutput =
+                        eventTimeLogic.createMainOutput(output, this::onWatermarkEmitted);
                 initializeLatencyMarkerEmitter(output);
                 lastInvokedOutput = output;
                 this.operatingMode = OperatingMode.READING;
@@ -363,10 +429,18 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
             case SOURCE_STOPPED:
                 this.operatingMode = OperatingMode.DATA_FINISHED;
                 sourceMetricGroup.idlingStarted();
+                return DataInputStatus.STOPPED;
+            case SOURCE_DRAINED:
+                this.operatingMode = OperatingMode.DATA_FINISHED;
+                sourceMetricGroup.idlingStarted();
                 return DataInputStatus.END_OF_DATA;
             case DATA_FINISHED:
                 sourceMetricGroup.idlingStarted();
                 return DataInputStatus.END_OF_INPUT;
+            case WAITING_FOR_ALIGNMENT:
+                checkState(!waitingForAlignmentFuture.isDone());
+                checkState(shouldWaitForAlignment());
+                return convertToInternalStatus(InputStatus.NOTHING_AVAILABLE);
             case READING:
             default:
                 throw new IllegalStateException("Unknown operating mode: " + operatingMode);
@@ -409,6 +483,12 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
         }
     }
 
+    private void emitLatestWatermark(long time) {
+        checkState(currentMainOutput != null);
+        operatorEventGateway.sendEventToCoordinator(
+                new ReportedWatermarkEvent(lastEmittedWatermark));
+    }
+
     @Override
     public void snapshotState(StateSnapshotContext context) throws Exception {
         long checkpointId = context.getCheckpointId();
@@ -419,10 +499,13 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
     @Override
     public CompletableFuture<?> getAvailableFuture() {
         switch (operatingMode) {
+            case WAITING_FOR_ALIGNMENT:
+                return availabilityHelper.update(waitingForAlignmentFuture);
             case OUTPUT_NOT_INITIALIZED:
             case READING:
                 return availabilityHelper.update(sourceReader.isAvailable());
             case SOURCE_STOPPED:
+            case SOURCE_DRAINED:
             case DATA_FINISHED:
                 return AvailabilityProvider.AVAILABLE;
             default:
@@ -452,7 +535,10 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
 
     @SuppressWarnings("unchecked")
     public void handleOperatorEvent(OperatorEvent event) {
-        if (event instanceof AddSplitEvent) {
+        if (event instanceof WatermarkAlignmentEvent) {
+            currentMaxDesiredWatermark = ((WatermarkAlignmentEvent) event).getMaxWatermark();
+            checkWatermarkAlignment();
+        } else if (event instanceof AddSplitEvent) {
             try {
                 sourceReader.addSplits(((AddSplitEvent<SplitT>) event).splits(splitSerializer));
             } catch (IOException e) {
@@ -465,6 +551,31 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
         } else {
             throw new IllegalStateException("Received unexpected operator event " + event);
         }
+    }
+
+    private void onWatermarkEmitted(long emittedWatermark) {
+        lastEmittedWatermark = emittedWatermark;
+        checkWatermarkAlignment();
+    }
+
+    private void checkWatermarkAlignment() {
+        if (operatingMode == OperatingMode.READING) {
+            checkState(waitingForAlignmentFuture.isDone());
+            if (shouldWaitForAlignment()) {
+                operatingMode = OperatingMode.WAITING_FOR_ALIGNMENT;
+                waitingForAlignmentFuture = new CompletableFuture<>();
+            }
+        } else if (operatingMode == OperatingMode.WAITING_FOR_ALIGNMENT) {
+            checkState(!waitingForAlignmentFuture.isDone());
+            if (!shouldWaitForAlignment()) {
+                operatingMode = OperatingMode.READING;
+                waitingForAlignmentFuture.complete(null);
+            }
+        }
+    }
+
+    private boolean shouldWaitForAlignment() {
+        return currentMaxDesiredWatermark < lastEmittedWatermark;
     }
 
     private void registerReader() {
@@ -487,24 +598,26 @@ public class SourceOperator<OUT, SplitT extends SourceSplit> extends AbstractStr
 
     private static class SourceOperatorAvailabilityHelper {
         private final CompletableFuture<Void> forcedStopFuture = new CompletableFuture<>();
-        private CompletableFuture<Void> currentReaderFuture;
-        private CompletableFuture<?> currentCombinedFuture;
+        private final MultipleFuturesAvailabilityHelper availabilityHelper;
+
+        private SourceOperatorAvailabilityHelper() {
+            availabilityHelper = new MultipleFuturesAvailabilityHelper(2);
+            availabilityHelper.anyOf(0, forcedStopFuture);
+        }
 
         public CompletableFuture<?> update(CompletableFuture<Void> sourceReaderFuture) {
-            if (sourceReaderFuture == AvailabilityProvider.AVAILABLE) {
-                return sourceReaderFuture;
-            } else if (sourceReaderFuture == currentReaderFuture) {
-                return currentCombinedFuture;
-            } else {
-                currentReaderFuture = sourceReaderFuture;
-                currentCombinedFuture =
-                        CompletableFuture.anyOf(forcedStopFuture, sourceReaderFuture);
-                return currentCombinedFuture;
+            if (sourceReaderFuture == AvailabilityProvider.AVAILABLE
+                    || sourceReaderFuture.isDone()) {
+                return AvailabilityProvider.AVAILABLE;
             }
+            availabilityHelper.resetToUnAvailable();
+            availabilityHelper.anyOf(0, forcedStopFuture);
+            availabilityHelper.anyOf(1, sourceReaderFuture);
+            return availabilityHelper.getAvailableFuture();
         }
 
         public void forceStop() {
-            this.forcedStopFuture.complete(null);
+            forcedStopFuture.complete(null);
         }
     }
 }
