@@ -29,13 +29,17 @@ import org.apache.calcite.sql.parser.SqlParserTest;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.TypeSafeDiagnosingMatcher;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 
 /** FlinkSqlParserImpl tests. * */
+@Execution(CONCURRENT)
 public class FlinkSqlParserImplTest extends SqlParserTest {
 
     @Override
@@ -64,7 +68,7 @@ public class FlinkSqlParserImplTest extends SqlParserTest {
      * Here we override the super method to avoid test error from `describe schema` supported in
      * original calcite.
      */
-    @Ignore
+    @Disabled
     @Test
     public void testDescribeSchema() {}
 
@@ -254,7 +258,7 @@ public class FlinkSqlParserImplTest extends SqlParserTest {
      * Here we override the super method to avoid test error from `describe statement` supported in
      * original calcite.
      */
-    @Ignore
+    @Disabled
     @Test
     public void testDescribeStatement() {}
 
@@ -1058,13 +1062,16 @@ public class FlinkSqlParserImplTest extends SqlParserTest {
         sql("insert into emps(z boolean) partition (z='ab') (x,y) select * from emps").ok(expected);
     }
 
-    @Test(expected = SqlParseException.class)
+    @Test
     public void testInsertExtendedColumnAsStaticPartition2() {
-        sql("insert into emps(x, y, z boolean) partition (z='ab') select * from emps")
-                .node(
-                        new ValidationMatcher()
-                                .fails(
-                                        "Extended columns not allowed under the current SQL conformance level"));
+        assertThatThrownBy(
+                        () ->
+                                sql("insert into emps(x, y, z boolean) partition (z='ab') select * from emps")
+                                        .node(
+                                                new ValidationMatcher()
+                                                        .fails(
+                                                                "Extended columns not allowed under the current SQL conformance level")))
+                .isInstanceOf(SqlParseException.class);
     }
 
     @Test
@@ -1480,6 +1487,77 @@ public class FlinkSqlParserImplTest extends SqlParserTest {
     public void testExecuteInsert() {
         String expected = "EXECUTE INSERT INTO `EMPS1`\n" + "(SELECT *\n" + "FROM `EMPS2`)";
         this.sql("execute insert into emps1 select * from emps2").ok(expected);
+    }
+
+    @Test
+    public void testExecutePlan() {
+        sql("execute plan './test.json'").ok("EXECUTE PLAN './test.json'");
+        sql("execute plan '/some/absolute/dir/plan.json'")
+                .ok("EXECUTE PLAN '/some/absolute/dir/plan.json'");
+    }
+
+    @Test
+    public void testCompilePlan() {
+        sql("compile plan './test.json' for insert into t1 select * from t2")
+                .ok(
+                        "COMPILE PLAN './test.json' FOR INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)");
+        sql("compile plan './test.json' if not exists for insert into t1 select * from t2")
+                .ok(
+                        "COMPILE PLAN './test.json' IF NOT EXISTS FOR INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)");
+
+        sql("compile plan './test.json' for statement set "
+                        + "begin insert into t1 select * from t2; insert into t2 select * from t3; end")
+                .ok(
+                        "COMPILE PLAN './test.json' FOR STATEMENT SET BEGIN\n"
+                                + "INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)\n"
+                                + ";\n"
+                                + "INSERT INTO `T2`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T3`)\n"
+                                + ";\n"
+                                + "END");
+        sql("compile plan './test.json' if not exists for statement set "
+                        + "begin insert into t1 select * from t2; insert into t2 select * from t3; end")
+                .ok(
+                        "COMPILE PLAN './test.json' IF NOT EXISTS FOR STATEMENT SET BEGIN\n"
+                                + "INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)\n"
+                                + ";\n"
+                                + "INSERT INTO `T2`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T3`)\n"
+                                + ";\n"
+                                + "END");
+    }
+
+    @Test
+    public void testCompileAndExecutePlan() {
+        sql("compile and execute plan './test.json' for insert into t1 select * from t2")
+                .ok(
+                        "COMPILE AND EXECUTE PLAN './test.json' FOR INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)");
+
+        sql("compile and execute plan './test.json' for statement set "
+                        + "begin insert into t1 select * from t2; insert into t2 select * from t3; end")
+                .ok(
+                        "COMPILE AND EXECUTE PLAN './test.json' FOR STATEMENT SET BEGIN\n"
+                                + "INSERT INTO `T1`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T2`)\n"
+                                + ";\n"
+                                + "INSERT INTO `T2`\n"
+                                + "(SELECT *\n"
+                                + "FROM `T3`)\n"
+                                + ";\n"
+                                + "END");
     }
 
     @Test

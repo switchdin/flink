@@ -19,12 +19,15 @@
 package org.apache.flink.connector.testframe.testsuites;
 
 import org.apache.flink.annotation.Experimental;
+import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Deadline;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.testframe.environment.ClusterControllable;
 import org.apache.flink.connector.testframe.environment.TestEnvironment;
 import org.apache.flink.connector.testframe.environment.TestEnvironmentSettings;
@@ -34,12 +37,16 @@ import org.apache.flink.connector.testframe.external.source.TestingSourceSetting
 import org.apache.flink.connector.testframe.junit.extensions.ConnectorTestingExtension;
 import org.apache.flink.connector.testframe.junit.extensions.TestCaseInvocationContextProvider;
 import org.apache.flink.connector.testframe.utils.CollectIteratorAssertions;
+import org.apache.flink.connector.testframe.utils.MetricQuerier;
 import org.apache.flink.core.execution.JobClient;
+import org.apache.flink.core.execution.SavepointFormatType;
+import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
 import org.apache.flink.streaming.api.operators.collect.CollectResultIterator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory;
@@ -47,6 +54,7 @@ import org.apache.flink.streaming.api.operators.collect.CollectStreamSink;
 import org.apache.flink.util.CloseableIterator;
 import org.apache.flink.util.TestLoggerExtension;
 
+import org.apache.commons.math3.util.Precision;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestTemplate;
@@ -55,18 +63,23 @@ import org.opentest4j.TestAbortedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
+import static org.apache.flink.connector.testframe.utils.ConnectorTestConstants.DEFAULT_COLLECT_DATA_TIMEOUT;
+import static org.apache.flink.connector.testframe.utils.ConnectorTestConstants.DEFAULT_JOB_STATUS_CHANGE_TIMEOUT;
 import static org.apache.flink.runtime.testutils.CommonTestUtils.terminateJob;
+import static org.apache.flink.runtime.testutils.CommonTestUtils.waitForAllTaskRunning;
 import static org.apache.flink.runtime.testutils.CommonTestUtils.waitForJobStatus;
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.apache.flink.runtime.testutils.CommonTestUtils.waitUntilCondition;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 /**
  * Base class for all test suites.
@@ -134,12 +147,18 @@ public abstract class SourceTestSuiteBase<T> {
         CollectIteratorBuilder<T> iteratorBuilder = addCollectSink(stream);
         JobClient jobClient = submitJob(execEnv, "Source Single Split Test");
 
-        // Validate test data
+        // Step 5: Validate test data
         try (CollectResultIterator<T> resultIterator = iteratorBuilder.build(jobClient)) {
             // Check test result
             LOG.info("Checking test results");
             checkResultWithSemantic(resultIterator, Arrays.asList(testRecords), semantic, null);
         }
+
+        // Step 5: Clean up
+        waitForJobStatus(
+                jobClient,
+                Collections.singletonList(JobStatus.FINISHED),
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
     }
 
     /**
@@ -197,6 +216,267 @@ public abstract class SourceTestSuiteBase<T> {
     }
 
     /**
+     * Test connector source restart from a savepoint.
+     *
+     * <p>This test will create 4 splits in the external system first, write test data to all
+     * splits, and consume back via a Flink job. Then stop the job with savepoint, restart the job
+     * from the checkpoint. After the job has been running, add some extra data to the source and
+     * compare the result.
+     *
+     * <p>The number and order of records in each split consumed by Flink need to be identical to
+     * the test data written into the external system to pass this test. There's no requirement for
+     * record order across splits.
+     */
+    @TestTemplate
+    @DisplayName("Test source restarting from a savepoint")
+    public void testSavepoint(
+            TestEnvironment testEnv,
+            DataStreamSourceExternalContext<T> externalContext,
+            CheckpointingMode semantic)
+            throws Exception {
+        restartFromSavepoint(testEnv, externalContext, semantic, 4, 4, 4);
+    }
+
+    /**
+     * Test connector source restart from a savepoint with a higher parallelism.
+     *
+     * <p>This test will create 4 splits in the external system first, write test data to all splits
+     * and consume back via a Flink job with parallelism 2. Then stop the job with savepoint,
+     * restart the job from the checkpoint with a higher parallelism 4. After the job has been
+     * running, add some extra data to the source and compare the result.
+     *
+     * <p>The number and order of records in each split consumed by Flink need to be identical to
+     * the test data written into the external system to pass this test. There's no requirement for
+     * record order across splits.
+     */
+    @TestTemplate
+    @DisplayName("Test source restarting with a higher parallelism")
+    public void testScaleUp(
+            TestEnvironment testEnv,
+            DataStreamSourceExternalContext<T> externalContext,
+            CheckpointingMode semantic)
+            throws Exception {
+        restartFromSavepoint(testEnv, externalContext, semantic, 4, 2, 4);
+    }
+
+    /**
+     * Test connector source restart from a savepoint with a lower parallelism.
+     *
+     * <p>This test will create 4 splits in the external system first, write test data to all splits
+     * and consume back via a Flink job with parallelism 4. Then stop the job with savepoint,
+     * restart the job from the checkpoint with a lower parallelism 2. After the job has been
+     * running, add some extra data to the source and compare the result.
+     *
+     * <p>The number and order of records in each split consumed by Flink need to be identical to
+     * the test data written into the external system to pass this test. There's no requirement for
+     * record order across splits.
+     */
+    @TestTemplate
+    @DisplayName("Test source restarting with a lower parallelism")
+    public void testScaleDown(
+            TestEnvironment testEnv,
+            DataStreamSourceExternalContext<T> externalContext,
+            CheckpointingMode semantic)
+            throws Exception {
+        restartFromSavepoint(testEnv, externalContext, semantic, 4, 4, 2);
+    }
+
+    private void restartFromSavepoint(
+            TestEnvironment testEnv,
+            DataStreamSourceExternalContext<T> externalContext,
+            CheckpointingMode semantic,
+            final int splitNumber,
+            final int beforeParallelism,
+            final int afterParallelism)
+            throws Exception {
+        // Step 1: Preparation
+        TestingSourceSettings sourceSettings =
+                TestingSourceSettings.builder()
+                        .setBoundedness(Boundedness.CONTINUOUS_UNBOUNDED)
+                        .setCheckpointingMode(semantic)
+                        .build();
+        TestEnvironmentSettings envOptions =
+                TestEnvironmentSettings.builder()
+                        .setConnectorJarPaths(externalContext.getConnectorJarPaths())
+                        .build();
+
+        // Step 2: Generate test data
+        final List<ExternalSystemSplitDataWriter<T>> writers = new ArrayList<>();
+        final List<List<T>> testRecordCollections = new ArrayList<>();
+        for (int i = 0; i < splitNumber; i++) {
+            writers.add(externalContext.createSourceSplitDataWriter(sourceSettings));
+            testRecordCollections.add(
+                    generateTestDataForWriter(externalContext, sourceSettings, i, writers.get(i)));
+        }
+
+        // Step 3: Build and execute Flink job
+        final StreamExecutionEnvironment execEnv = testEnv.createExecutionEnvironment(envOptions);
+        execEnv.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+        execEnv.enableCheckpointing(50);
+        execEnv.setRestartStrategy(RestartStrategies.noRestart());
+        DataStreamSource<T> source =
+                execEnv.fromSource(
+                                tryCreateSource(externalContext, sourceSettings),
+                                WatermarkStrategy.noWatermarks(),
+                                "Tested Source")
+                        .setParallelism(beforeParallelism);
+        CollectIteratorBuilder<T> iteratorBuilder = addCollectSink(source);
+        final JobClient jobClient = execEnv.executeAsync("Restart Test");
+
+        // Step 4: Check the result and stop Flink job with a savepoint
+        CollectResultIterator<T> iterator = null;
+        try {
+            iterator = iteratorBuilder.build(jobClient);
+
+            checkResultWithSemantic(
+                    iterator,
+                    testRecordCollections,
+                    semantic,
+                    getTestDataSize(testRecordCollections));
+        } catch (Exception e) {
+            killJob(jobClient);
+            throw e;
+        }
+        String savepointPath =
+                jobClient
+                        .stopWithSavepoint(
+                                true, testEnv.getCheckpointUri(), SavepointFormatType.CANONICAL)
+                        .get(30, TimeUnit.SECONDS);
+        waitForJobStatus(
+                jobClient,
+                Collections.singletonList(JobStatus.FINISHED),
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
+
+        // Step 5: Generate new test data
+        final List<List<T>> newTestRecordCollections = new ArrayList<>();
+        for (int i = 0; i < splitNumber; i++) {
+            newTestRecordCollections.add(
+                    generateTestDataForWriter(externalContext, sourceSettings, i, writers.get(i)));
+        }
+
+        // Step 6: restart the Flink job with the savepoint
+        TestEnvironmentSettings restartEnvOptions =
+                TestEnvironmentSettings.builder()
+                        .setConnectorJarPaths(externalContext.getConnectorJarPaths())
+                        .setSavepointRestorePath(savepointPath)
+                        .build();
+        final StreamExecutionEnvironment restartEnv =
+                testEnv.createExecutionEnvironment(restartEnvOptions);
+        restartEnv.enableCheckpointing(500);
+        restartEnv.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+
+        DataStreamSource<T> restartSource =
+                restartEnv
+                        .fromSource(
+                                tryCreateSource(externalContext, sourceSettings),
+                                WatermarkStrategy.noWatermarks(),
+                                "Tested Source")
+                        .setParallelism(afterParallelism);
+        addCollectSink(restartSource);
+
+        final JobClient restartJobClient = restartEnv.executeAsync("Restart Test");
+
+        waitForJobStatus(
+                restartJobClient,
+                Collections.singletonList(JobStatus.RUNNING),
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
+
+        try {
+            iterator.setJobClient(restartJobClient);
+
+            /*
+             * Use the same iterator as the previous run, because the CollectStreamSink will snapshot
+             * its state and recover from it.
+             *
+             * The fetcher in CollectResultIterator is responsible for comminicating with
+             * the CollectSinkFunction, and deal the result with CheckpointedCollectResultBuffer
+             * in EXACTLY_ONCE semantic.
+             */
+            checkResultWithSemantic(
+                    iterator,
+                    newTestRecordCollections,
+                    semantic,
+                    getTestDataSize(newTestRecordCollections));
+        } finally {
+            // Clean up
+            killJob(restartJobClient);
+            iterator.close();
+        }
+    }
+
+    /**
+     * Test connector source metrics.
+     *
+     * <p>This test will create 4 splits in the external system first, write test data to all splits
+     * and consume back via a Flink job with parallelism 4. Then read and compare the metrics.
+     *
+     * <p>Now test: numRecordsIn
+     */
+    @TestTemplate
+    @DisplayName("Test source metrics")
+    public void testSourceMetrics(
+            TestEnvironment testEnv,
+            DataStreamSourceExternalContext<T> externalContext,
+            CheckpointingMode semantic)
+            throws Exception {
+        TestingSourceSettings sourceSettings =
+                TestingSourceSettings.builder()
+                        .setBoundedness(Boundedness.CONTINUOUS_UNBOUNDED)
+                        .setCheckpointingMode(semantic)
+                        .build();
+        TestEnvironmentSettings envOptions =
+                TestEnvironmentSettings.builder()
+                        .setConnectorJarPaths(externalContext.getConnectorJarPaths())
+                        .build();
+        final int splitNumber = 4;
+        final List<List<T>> testRecordCollections = new ArrayList<>();
+        for (int i = 0; i < splitNumber; i++) {
+            testRecordCollections.add(generateAndWriteTestData(i, externalContext, sourceSettings));
+        }
+
+        // make sure use different names when executes multi times
+        String sourceName = "metricTestSource" + testRecordCollections.hashCode();
+        final StreamExecutionEnvironment env = testEnv.createExecutionEnvironment(envOptions);
+        final DataStreamSource<T> dataStreamSource =
+                env.fromSource(
+                                tryCreateSource(externalContext, sourceSettings),
+                                WatermarkStrategy.noWatermarks(),
+                                sourceName)
+                        .setParallelism(splitNumber);
+        dataStreamSource.addSink(new DiscardingSink<>());
+        final JobClient jobClient = env.executeAsync("Metrics Test");
+
+        final MetricQuerier queryRestClient = new MetricQuerier(new Configuration());
+        try {
+            waitForAllTaskRunning(
+                    () ->
+                            queryRestClient.getJobDetails(
+                                    testEnv.getRestEndpoint(), jobClient.getJobID()),
+                    Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
+
+            waitUntilCondition(
+                    () -> {
+                        // test metrics
+                        try {
+                            return checkSourceMetrics(
+                                    queryRestClient,
+                                    testEnv,
+                                    jobClient.getJobID(),
+                                    sourceName,
+                                    getTestDataSize(testRecordCollections));
+                        } catch (Exception e) {
+                            // skip failed assert try
+                            return false;
+                        }
+                    },
+                    Deadline.fromNow(DEFAULT_COLLECT_DATA_TIMEOUT));
+        } finally {
+            // Clean up
+            killJob(jobClient);
+        }
+    }
+
+    /**
      * Test connector source with an idle reader.
      *
      * <p>This test will create 4 split in the external system, write test data to all splits, and
@@ -249,6 +529,12 @@ public abstract class SourceTestSuiteBase<T> {
             LOG.info("Checking test results");
             checkResultWithSemantic(resultIterator, testRecordsLists, semantic, null);
         }
+
+        // Step 5: Clean up
+        waitForJobStatus(
+                jobClient,
+                Collections.singletonList(JobStatus.FINISHED),
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
     }
 
     /**
@@ -323,7 +609,7 @@ public abstract class SourceTestSuiteBase<T> {
         waitForJobStatus(
                 jobClient,
                 Collections.singletonList(JobStatus.RUNNING),
-                Deadline.fromNow(Duration.ofSeconds(30)));
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
 
         // Step 6: Write test data again to external system
         List<T> testRecordsAfterFailure =
@@ -344,11 +630,11 @@ public abstract class SourceTestSuiteBase<T> {
                 testRecordsAfterFailure.size());
 
         // Step 8: Clean up
-        terminateJob(jobClient, Duration.ofSeconds(30));
+        terminateJob(jobClient);
         waitForJobStatus(
                 jobClient,
                 Collections.singletonList(JobStatus.CANCELED),
-                Deadline.fromNow(Duration.ofSeconds(30)));
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
         iterator.close();
     }
 
@@ -392,6 +678,7 @@ public abstract class SourceTestSuiteBase<T> {
         return env.executeAsync(jobName);
     }
 
+    /** Add a collect sink in the job. */
     protected CollectIteratorBuilder<T> addCollectSink(DataStream<T> stream) {
         TypeSerializer<T> serializer =
                 stream.getType().createSerializer(stream.getExecutionConfig());
@@ -407,6 +694,41 @@ public abstract class SourceTestSuiteBase<T> {
                 serializer,
                 accumulatorName,
                 stream.getExecutionEnvironment().getCheckpointConfig());
+    }
+
+    /**
+     * Generate a set of split writers.
+     *
+     * @param externalContext External context
+     * @param splitIndex the split index
+     * @param writer the writer to send data
+     * @return List of generated test records
+     */
+    protected List<T> generateTestDataForWriter(
+            DataStreamSourceExternalContext<T> externalContext,
+            TestingSourceSettings sourceSettings,
+            int splitIndex,
+            ExternalSystemSplitDataWriter<T> writer) {
+        final List<T> testRecordCollection =
+                externalContext.generateTestData(
+                        sourceSettings, splitIndex, ThreadLocalRandom.current().nextLong());
+        LOG.debug("Writing {} records to external system", testRecordCollection.size());
+        writer.writeRecords(testRecordCollection);
+        return testRecordCollection;
+    }
+
+    /**
+     * Get the size of test data.
+     *
+     * @param collections test data
+     * @return the size of test data
+     */
+    protected int getTestDataSize(List<List<T>> collections) {
+        int sumSize = 0;
+        for (Collection<T> collection : collections) {
+            sumSize += collection.size();
+        }
+        return sumSize;
     }
 
     /**
@@ -433,11 +755,36 @@ public abstract class SourceTestSuiteBase<T> {
                                                 .matchesRecordsFromSource(testData, semantic);
                                         return true;
                                     }))
-                    .succeedsWithin(Duration.ofSeconds(30));
+                    .succeedsWithin(DEFAULT_COLLECT_DATA_TIMEOUT);
         } else {
             CollectIteratorAssertions.assertThat(resultIterator)
                     .matchesRecordsFromSource(testData, semantic);
         }
+    }
+
+    /** Compare the metrics. */
+    private boolean checkSourceMetrics(
+            MetricQuerier queryRestClient,
+            TestEnvironment testEnv,
+            JobID jobId,
+            String sourceName,
+            long allRecordSize)
+            throws Exception {
+        Double sumNumRecordsIn =
+                queryRestClient.getAggregatedMetricsByRestAPI(
+                        testEnv.getRestEndpoint(),
+                        jobId,
+                        sourceName,
+                        MetricNames.IO_NUM_RECORDS_IN);
+        return Precision.equals(allRecordSize, sumNumRecordsIn);
+    }
+
+    private void killJob(JobClient jobClient) throws Exception {
+        terminateJob(jobClient);
+        waitForJobStatus(
+                jobClient,
+                Collections.singletonList(JobStatus.CANCELED),
+                Deadline.fromNow(DEFAULT_JOB_STATUS_CHANGE_TIMEOUT));
     }
 
     /** Builder class for constructing {@link CollectResultIterator} of collect sink. */
